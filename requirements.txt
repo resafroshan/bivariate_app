@@ -4,3 +4,4 @@ plotly
 scipy
 openpyxl
 matplotlib
+statsmodel

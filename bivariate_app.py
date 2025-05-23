@@ -226,6 +226,178 @@ def apply_data_filters(df):
         if st.button("Reset All Filters"):
             filters = {}
             filtered_df = df.copy()
+    
+    # Apply global NaN handling FIRST (regardless of column-specific filters)
+    if nan_handling == "Exclude rows with NaN values":
+        filtered_df = filtered_df.dropna()
+    elif nan_handling == "Only show rows with NaN values":
+        # Keep only rows with at least one NaN
+        filtered_df = filtered_df[filtered_df.isna().any(axis=1)]
+    
+    # Apply column-specific filters
+    if filters and columns_to_filter:
+        for column, filter_value in filters.items():
+            # Skip the NaN indicator entries
+            if column.endswith("_include_nan"):
+                continue
+            
+            col_type = df[column].dtype
+            include_nan = filters.get(f"{column}_include_nan", nan_handling == "Include rows with NaN values")
+            
+            if col_type in ['object', 'category']:
+                # For categorical columns, filter based on selected values
+                if include_nan:
+                    # Include both selected values and NaN
+                    filtered_df = filtered_df[
+                        filtered_df[column].isin(filter_value) | filtered_df[column].isna()
+                    ]
+                else:
+                    # Only include selected values, exclude NaN
+                    filtered_df = filtered_df[filtered_df[column].isin(filter_value)]
+            else:
+                # For numerical columns, apply range filter
+                if include_nan:
+                    # Include values in range or NaN
+                    filtered_df = filtered_df[
+                        ((filtered_df[column] >= filter_value[0]) & 
+                        (filtered_df[column] <= filter_value[1])) | 
+                        filtered_df[column].isna()
+                    ]
+                else:
+                    # Only include values in range, exclude NaN
+                    filtered_df = filtered_df[
+                        (filtered_df[column] >= filter_value[0]) & 
+                        (filtered_df[column] <= filter_value[1])
+                    ]
+
+    # Show filter summary and filtered data
+    original_rows = len(df)
+    filtered_rows = len(filtered_df)
+
+    # Check if any filtering was applied (global or column-specific)
+    global_filter_applied = (nan_handling != "Include rows with NaN values")
+    column_filters_applied = bool(filters and columns_to_filter)
+
+    if global_filter_applied or column_filters_applied:
+        # Build filter description
+        filter_descriptions = []
+        
+        if global_filter_applied:
+            if nan_handling == "Exclude rows with NaN values":
+                filter_descriptions.append("Excluded rows with NaN values")
+            elif nan_handling == "Only show rows with NaN values":
+                filter_descriptions.append("Showing only rows with NaN values")
+        
+        if column_filters_applied:
+            filter_descriptions.append(f"Column-specific filters on {len(columns_to_filter)} column(s)")
+        
+        # Display results
+        if filtered_rows != original_rows:
+            st.success(f"Filters applied! Remaining rows: {filtered_rows} (from original {original_rows})")
+            st.write("**Applied filters:**")
+            for desc in filter_descriptions:
+                st.write(f"• {desc}")
+        else:
+            st.info(f"Filters applied but no rows were removed. Total rows: {filtered_rows}")
+            st.write("**Applied filters:**")
+            for desc in filter_descriptions:
+                st.write(f"• {desc}")
+        
+        st.write("**Filtered Dataset Preview:**")
+        st.dataframe(filtered_df.head())
+    else:
+        st.info(f"No filters applied. Showing full dataset ({original_rows} rows).")
+
+    return filtered_df
+    st.header("Data Filtering")
+    
+    # Create expandable filter section
+    with st.expander("🔍 Filter Data", expanded=False):
+        # Get all column names
+        all_columns = df.columns.tolist()
+        
+        # Initialize filtered_df with the original dataframe
+        filtered_df = df.copy()
+        
+        # NaN handling option
+        nan_handling = st.radio(
+            "Handle NaN/missing values of the uploaded data:",
+            ["Include rows with NaN values", "Exclude rows with NaN values", "Only show rows with NaN values"],
+            index=0,  # Default: Include NaN values
+            key=f"nan_handling_{st.session_state.page}"
+        )
+        
+        # Allow multiple columns to filter
+        columns_to_filter = st.multiselect(
+            "Select columns to filter:",
+            all_columns,
+            key=f"filter_columns_{st.session_state.page}"
+        )
+        
+        # Create filters for each selected column
+        filters = {}
+        for column in columns_to_filter:
+            col_type = df[column].dtype
+            
+            if col_type in ['object', 'category']:
+                # Categorical filter
+                # Get unique values, handling NaN appropriately
+                unique_values = df[column].dropna().unique().tolist()
+                
+                # Add a "NaN/Missing" option if Include or Only show NaN is selected
+                if nan_handling != "Exclude rows with NaN values" and df[column].isna().any():
+                    unique_values_with_nan = unique_values.copy()
+                    unique_values_with_nan.append("NaN/Missing")
+                    
+                    selected_values = st.multiselect(
+                        f"Select values for '{column}':",
+                        unique_values_with_nan,
+                        default=unique_values_with_nan if nan_handling != "Only show rows with NaN values" else ["NaN/Missing"],
+                        key=f"filter_{column}_{st.session_state.page}"
+                    )
+                    
+                    # Store selection without the NaN placeholder
+                    filters[column] = [val for val in selected_values if val != "NaN/Missing"]
+                    
+                    # Store whether NaN was selected
+                    filters[f"{column}_include_nan"] = "NaN/Missing" in selected_values
+                else:
+                    selected_values = st.multiselect(
+                        f"Select values for '{column}':",
+                        unique_values,
+                        default=unique_values if nan_handling != "Only show rows with NaN values" else [],
+                        key=f"filter_{column}_{st.session_state.page}"
+                    )
+                    filters[column] = selected_values
+                    filters[f"{column}_include_nan"] = nan_handling == "Only show rows with NaN values"
+            else:
+                # Numerical filter (slider)
+                min_val = float(df[column].min())
+                max_val = float(df[column].max())
+                step = (max_val - min_val) / 100 if (max_val - min_val) > 0 else 0.1
+                
+                selected_range = st.slider(
+                    f"Select range for '{column}':",
+                    min_val,
+                    max_val,
+                    (min_val, max_val),
+                    step=step,
+                    key=f"filter_{column}_{st.session_state.page}"
+                )
+                filters[column] = selected_range
+                
+                # Add NaN checkbox for numerical columns
+                include_nan_numeric = st.checkbox(
+                    f"Include NaN/missing values for '{column}'",
+                    value=nan_handling == "Include rows with NaN values" or nan_handling == "Only show rows with NaN values",
+                    key=f"include_nan_{column}_{st.session_state.page}"
+                )
+                filters[f"{column}_include_nan"] = include_nan_numeric
+        
+        # Add reset filters button
+        if st.button("Reset All Filters"):
+            filters = {}
+            filtered_df = df.copy()
         
         # Apply filters
         if filters:
@@ -349,155 +521,267 @@ if st.sidebar.button("Bivariate Analysis"):
 # Univariate Analysis Page
 if st.session_state.page == "Univariate Analysis":
     st.title("Univariate Analysis")
-    # File Uploader
-    uploaded_file = st.file_uploader("Upload a dataset for Univariate Analysis", type=['csv','xlsx'], accept_multiple_files=False, key="univariate_upload")
+
+    # Initialize session state variables
+    if 'original_df' not in st.session_state:
+        st.session_state.original_df = None
+    if 'df' not in st.session_state:
+        st.session_state.df = None
+    if 'page' not in st.session_state:
+        st.session_state.page = 'univariate'
+
+    # File uploader
+    uploaded_file = st.file_uploader("Upload a dataset for Univariate Analysis", 
+                                    type=['csv','xlsx'], 
+                                    accept_multiple_files=False, 
+                                    key="univariate_upload")
 
     if uploaded_file:
-        # Read the uploaded Excel file into a DataFrame
-        try:
-            df = pd.read_excel(uploaded_file)
-        except:
-            df = pd.read_csv(uploaded_file)
+        # Only load the file if it hasn't been loaded already or a new file is uploaded
+        if st.session_state.original_df is None:
+            try:
+                df = pd.read_excel(uploaded_file)
+            except:
+                df = pd.read_csv(uploaded_file)
+            
+            # Store original and working copies
+            st.session_state.original_df = df.copy()
+            st.session_state.df = df.copy()
         
-        n_rows, n_columns = df.shape
+        # Always use the session state dataframe
+        df = st.session_state.df.copy()
         
-        # Display the uploaded dataset
+        # Display dataset info
         st.write("Uploaded Dataset:")
         st.dataframe(df, hide_index=True)
-        st.write(f"Rows: {n_rows}, Columns: {n_columns}")
+        st.write(f"Rows: {len(df)}, Columns: {len(df.columns)}")
         
-        # Apply data filters
-        df = apply_data_filters(df)
+        # Apply filters to the current dataframe
+        filtered_df = apply_data_filters(df)
         
-        # Detect table type
-        table_type = detect_table_type(df)
-        st.write(f"Detected Table Type: **{table_type}**")
+        # Get column types
+        numerical_columns = filtered_df.select_dtypes(include=['number']).columns.tolist()
+        categorical_columns = filtered_df.select_dtypes(include=['object', 'category']).columns.tolist()
         
-        # Perform analysis based on table type
-        if table_type == "Cathodes":
-            # GDL Analysis
-            st.header("GDL Analysis")
-            gdl_columns = [col for col in df.columns if "gdl" in col.lower()]
-            if gdl_columns:
-                gdl_parameters_df = df[gdl_columns]
-                gdl_numerical_df = gdl_parameters_df.select_dtypes(include=['number'])
-                if not gdl_numerical_df.empty:
-                    st.write("Statistical Analysis for GDL Parameters:")
-                    gdl_stats = calculate_statistics(gdl_numerical_df)
-                    st.dataframe(gdl_stats.T)
-                else:
-                    st.warning("No numerical GDL columns found in the dataset.")
-            else:
-                st.warning("No GDL columns found in the dataset.")
-
-            # CL Analysis
-            st.header("CL Analysis")
-            cl_columns = [col for col in df.columns if "cl" in col.lower() or "catalyst" in col.lower()]
-            if cl_columns:
-                cl_parameters_df = df[cl_columns]
-                cl_numerical_df = cl_parameters_df.select_dtypes(include=['number'])
-                if not cl_numerical_df.empty:
-                    st.write("Statistical Analysis for CL Parameters:")
-                    cl_stats = calculate_statistics(cl_numerical_df)
-                    st.dataframe(cl_stats.T)
-                else:
-                    st.warning("No numerical CL columns found in the dataset.")
-            else:
-                st.warning("No CL columns found in the dataset.")
+        # Analysis section
+        st.header("Univariate Analysis")
+        
+        # Create tabs for different types of analysis
+        if numerical_columns and categorical_columns:
+            tab1, tab2 = st.tabs(["📊 Numerical Analysis", "📋 Categorical Analysis"])
+        elif numerical_columns:
+            tab1 = st.tabs(["📊 Numerical Analysis"])[0]
+        elif categorical_columns:
+            tab2 = st.tabs(["📋 Categorical Analysis"])[0]
         else:
-            # General Numerical Analysis for Anode, Cell Test, etc.
-            numerical_columns = df.select_dtypes(include=['number']).columns.tolist()
-            if numerical_columns:
-                st.write("Statistical Analysis for Numerical Columns:")
-                numerical_stats = calculate_statistics(df[numerical_columns])
-                st.dataframe(numerical_stats.T)
-            else:
-                st.warning("No numerical columns found in the dataset.")
-
-        # Data Visualization Section
-        st.header("Plots")
+            st.warning("No numerical or categorical columns found for analysis.")
+            tab1, tab2 = None, None
         
-        # Combine all numerical columns
-        all_numerical_columns = df.select_dtypes(include=['number']).columns.tolist()
-        
-        if all_numerical_columns:
-            # Column selection
-            st.subheader("Select Columns for Visualization")
-            selected_columns = st.multiselect(
-                "Choose columns to visualize",
-                all_numerical_columns,
-                default=all_numerical_columns[:2] if len(all_numerical_columns) >= 2 else all_numerical_columns
-            )
-
-            if selected_columns:
-                # Box Plot
-                st.subheader("Box Plot")
-                box_plot = create_box_plot(df, selected_columns)
-                st.plotly_chart(box_plot, use_container_width=True)
-                st.download_button(label = "Download as HTML",
-                                    data = download_plotly_fig(box_plot, "Boxplot_plot"),
-                                    file_name=f"Boxplot_univariate.html",
-                                    mime= "text/html")
-                
-                # Histograms with Distribution Curves
-                st.subheader("Distribution Analysis")
-                for column in selected_columns:
-                    hist_plot = create_histogram(df, column)
-                    st.plotly_chart(hist_plot, use_container_width=True)
-                    st.download_button(label = "Download as HTML",
-                                       data = download_plotly_fig(hist_plot, "histogram_plot"),
-                                       file_name=f"Histogram - {column}.html",
-                                       mime= "text/html")
-            else:
-                st.warning("Please select at least one column for visualization.")
-        else:
-            st.warning("No numerical columns found in the dataset for visualization.")
-        
-        # Categorical Analysis Section
-        categorical_columns = df.select_dtypes(include=['object', 'category']).columns.tolist()
-        
-        if categorical_columns:
-            st.header("Categorical Analysis")
-            st.write("Statistical Analysis for Categorical Columns:")
-            
-            # Display categorical column statistics
-            for col in categorical_columns:
-                with st.expander(f"📊 {col} Analysis", expanded=False):
-                    # Calculate and display basic stats
-                    tot_count = df[col].count()
-                    unique_count = df[col].nunique()
-                    null_count = df[col].isnull().sum()
-                    null_percentage = (null_count / len(df)) * 100
+        # Numerical Analysis Tab
+        if numerical_columns and 'tab1' in locals():
+            with tab1:
+                if len(numerical_columns) > 0:
+                    # Column selection
+                    selected_columns = st.multiselect(
+                        "Select numerical columns for analysis:",
+                        numerical_columns,
+                        default=numerical_columns[:3] if len(numerical_columns) >= 3 else numerical_columns,
+                        key="numerical_columns_select"
+                    )
                     
-                    st.write(f'**Total Entries:** {tot_count}')
-                    st.write(f"**Unique Values:** {unique_count}")
-                    st.write(f"**Null Values:** {null_count} ({null_percentage:.2f}%)")
-                    
-                    # Create and display visualizations
-                    if unique_count <= 20:  # Only show for columns with reasonable unique values
-                        stats_df, cat_fig = create_categorical_visualizations(df, col)
-                        st.dataframe(stats_df)
-                        st.plotly_chart(cat_fig, use_container_width=True)
-                        st.download_button(
-                            label="Download as HTML",
-                            data=download_plotly_fig(cat_fig, f"categorical_plot_{col}"),
-                            file_name=f"Categorical_plot_{col}.html",
-                            mime="text/html"
+                    if selected_columns:
+                        # Outlier removal option
+                        remove_outliers = st.checkbox(
+                            "Remove outliers for visualization and statistics",
+                            value=False,
+                            key="remove_outliers_numerical"
                         )
+                        
+                        # Prepare data for analysis
+                        analysis_df = filtered_df[selected_columns].copy()
+                        
+                        # Apply outlier removal if selected
+                        if remove_outliers:
+                            original_count = len(analysis_df)
+                            for col in selected_columns:
+                                analysis_df = remove_outliers_from_column(analysis_df, col)
+                            outliers_removed = original_count - len(analysis_df)
+                            if outliers_removed > 0:
+                                st.info(f"Removed {outliers_removed} rows containing outliers. Analyzing {len(analysis_df)} rows.")
+                        
+                        # Calculate and display statistics
+                        st.subheader("📈 Descriptive Statistics")
+                        if len(analysis_df) > 0:
+                            stats_df = calculate_statistics(analysis_df[selected_columns])
+                            st.dataframe(stats_df.style.format("{:.4f}"))
+                            
+                            # Download statistics
+                            csv = stats_df.to_csv()
+                            st.download_button(
+                                label="📥 Download Statistics as CSV",
+                                data=csv,
+                                file_name="descriptive_statistics.csv",
+                                mime="text/csv"
+                            )
+                        else:
+                            st.warning("No data remaining after outlier removal.")
+                        
+                        # Visualizations
+                        st.subheader("📊 Visualizations")
+                        
+                        # Box plots
+                        if len(analysis_df) > 0:
+                            st.write("**Box Plots:**")
+                            box_fig = create_box_plot(analysis_df, selected_columns)
+                            st.plotly_chart(box_fig, use_container_width=True)
+                            
+                            # Download box plot
+                            st.download_button(
+                                label="📥 Download Box Plot",
+                                data=download_plotly_fig(box_fig, "box_plot"),
+                                file_name="box_plots.html",
+                                mime="text/html"
+                            )
+                        
+                        # Individual histograms for each selected column
+                        if len(analysis_df) > 0:
+                            st.write("**Distribution Plots:**")
+                            for col in selected_columns:
+                                if analysis_df[col].dropna().nunique() > 1:  # Check if there's variation in the data
+                                    hist_fig = create_histogram(analysis_df, col)
+                                    st.plotly_chart(hist_fig, use_container_width=True)
+                                    
+                                    # Download histogram
+                                    st.download_button(
+                                        label=f"📥 Download {col} Distribution Plot",
+                                        data=download_plotly_fig(hist_fig, f"histogram_{col}"),
+                                        file_name=f"histogram_{col}.html",
+                                        mime="text/html",
+                                        key=f"download_hist_{col}"
+                                    )
+                                else:
+                                    st.warning(f"Column '{col}' has insufficient variation for distribution plot.")
                     else:
-                        st.warning(f"Too many unique values ({unique_count}) to display effectively.")
+                        st.info("Please select at least one numerical column for analysis.")
+                else:
+                    st.warning("No numerical columns available for analysis.")
+        
+        # Categorical Analysis Tab
+        if categorical_columns and 'tab2' in locals():
+            with tab2:
+                if len(categorical_columns) > 0:
+                    # Single column selection for categorical analysis
+                    selected_cat_column = st.selectbox(
+                        "Select a categorical column for analysis:",
+                        categorical_columns,
+                        key="categorical_column_select"
+                    )
                     
-                    # Show value counts table for columns with moderate unique counts
-                    if unique_count <= 50:
-                        st.write("Value Counts:")
-                        st.dataframe(df[col].value_counts().reset_index().rename(
-                            columns={'index': 'Value', col: 'Count'}
-                        ))
-        else:
-            st.warning("No categorical columns found in the dataset.")
+                    if selected_cat_column:
+                        # Prepare data for analysis
+                        analysis_df = filtered_df.copy()
+                        
+                        # Handle NaN values option
+                        nan_handling = st.radio(
+                            f"How to handle NaN/missing values in '{selected_cat_column}':",
+                            ["Include as 'Missing'", "Exclude from analysis"],
+                            key="cat_nan_handling"
+                        )
+                        
+                        if nan_handling == "Include as 'Missing'":
+                            analysis_df[selected_cat_column] = analysis_df[selected_cat_column].fillna('Missing')
+                        else:
+                            analysis_df = analysis_df.dropna(subset=[selected_cat_column])
+                        
+                        # Check if there's data left for analysis
+                        if len(analysis_df) > 0:
+                            # Calculate and display statistics
+                            st.subheader("📋 Categorical Statistics")
+                            stats_df, bar_fig = create_categorical_visualizations(analysis_df, selected_cat_column)
+                            
+                            # Display statistics table
+                            st.dataframe(stats_df)
+                            
+                            # Download statistics
+                            csv = stats_df.to_csv()
+                            st.download_button(
+                                label="📥 Download Categorical Statistics as CSV",
+                                data=csv,
+                                file_name=f"categorical_stats_{selected_cat_column}.csv",
+                                mime="text/csv",
+                                key="download_cat_stats"
+                            )
+                            
+                            # Visualizations
+                            st.subheader("📊 Visualizations")
+                            
+                            # Bar chart
+                            st.write("**Value Counts Bar Chart:**")
+                            st.plotly_chart(bar_fig, use_container_width=True)
+                            
+                            # Download bar chart
+                            st.download_button(
+                                label="📥 Download Bar Chart",
+                                data=download_plotly_fig(bar_fig, f"bar_chart_{selected_cat_column}"),
+                                file_name=f"bar_chart_{selected_cat_column}.html",
+                                mime="text/html",
+                                key="download_bar_chart"
+                            )
+                            
+                            # Pie chart (if not too many categories)
+                            unique_values = analysis_df[selected_cat_column].nunique()
+                            if unique_values <= 10:
+                                st.write("**Pie Chart:**")
+                                pie_fig = px.pie(
+                                    stats_df.reset_index(),
+                                    values='Count',
+                                    names='index',
+                                    title=f"Distribution of {selected_cat_column}"
+                                )
+                                pie_fig.update_traces(textposition='inside', textinfo='percent+label')
+                                st.plotly_chart(pie_fig, use_container_width=True)
+                                
+                                # Download pie chart
+                                st.download_button(
+                                    label="📥 Download Pie Chart",
+                                    data=download_plotly_fig(pie_fig, f"pie_chart_{selected_cat_column}"),
+                                    file_name=f"pie_chart_{selected_cat_column}.html",
+                                    mime="text/html",
+                                    key="download_pie_chart"
+                                )
+                            else:
+                                st.info(f"Pie chart not displayed due to too many categories ({unique_values}). Consider using filters to reduce categories.")
+                            
+                            # Additional insights
+                            st.subheader("📝 Insights")
+                            total_count = len(analysis_df)
+                            most_common = stats_df.index[0]
+                            most_common_pct = stats_df.loc[most_common, 'Percentage (%)']
+                            
+                            st.write(f"• **Total observations:** {total_count}")
+                            st.write(f"• **Number of unique categories:** {unique_values}")
+                            st.write(f"• **Most frequent category:** '{most_common}' ({most_common_pct}%)")
+                            
+                            if unique_values > 1:
+                                least_common = stats_df.index[-1]
+                                least_common_pct = stats_df.loc[least_common, 'Percentage (%)']
+                                st.write(f"• **Least frequent category:** '{least_common}' ({least_common_pct}%)")
+                            
+                            # Check for highly imbalanced data
+                            if most_common_pct > 90:
+                                st.warning(f"⚠️ Data is highly imbalanced: '{most_common}' represents {most_common_pct}% of all observations.")
+                            elif most_common_pct > 70:
+                                st.info(f"ℹ️ Data shows some imbalance: '{most_common}' represents {most_common_pct}% of all observations.")
+                        
+                        else:
+                            st.warning("No data available for analysis after handling missing values.")
+                    else:
+                        st.info("Please select a categorical column for analysis.")
+                else:
+                    st.warning("No categorical columns available for analysis.")
 
     else:
-        st.warning("Please upload an Excel/CSV file to proceed.")
+        st.warning("Please upload a dataset to begin analysis")
 
 # Bivariate Analysis Page
 elif st.session_state.page == "Bivariate Analysis":

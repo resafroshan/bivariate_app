@@ -2,3 +2,4 @@ streamlit==1.45.1
 pandas
 plotly
 scipy
+openpyxl

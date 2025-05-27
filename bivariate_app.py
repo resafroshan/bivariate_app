@@ -1023,7 +1023,7 @@ elif st.session_state.page == "Bivariate Analysis":
                 scatter_fig = px.scatter(plot_df, x=x_col, y=y_col, trendline="ols")
                 st.plotly_chart(scatter_fig, use_container_width=True)
                 st.download_button(
-                    label="Download Scatter Plot",
+                    label="📥 Download Scatter Plot",
                     data=download_plotly_fig(scatter_fig, "scatter_plot"),
                     file_name=f"Scatter_plot_{x_col}_vs_{y_col}.html",
                     mime="text/html"
@@ -1032,7 +1032,7 @@ elif st.session_state.page == "Bivariate Analysis":
                 heatmap_fig = px.density_heatmap(plot_df, x=x_col, y=y_col)
                 st.plotly_chart(heatmap_fig, use_container_width=True)
                 st.download_button(
-                    label="Download Heatmap",
+                    label="📥 Download Heatmap",
                     data=download_plotly_fig(heatmap_fig, "heatmap_plot"),
                     file_name=f"Heatmap_{x_col}_vs_{y_col}.html",
                     mime="text/html"
@@ -1151,7 +1151,7 @@ elif st.session_state.page == "Bivariate Analysis":
                     
                     st.plotly_chart(box_fig, use_container_width=True)
                     st.download_button(
-                        label="Download Box Plot",
+                        label="📥 Download Box Plot",
                         data=download_plotly_fig(box_fig, "box_plot"),
                         file_name=f"Box_plot_{cat_col}_vs_{num_col}.html",
                         mime="text/html"
@@ -1188,7 +1188,7 @@ elif st.session_state.page == "Bivariate Analysis":
                     
                     st.plotly_chart(bar_fig, use_container_width=True)
                     st.download_button(
-                        label="Download Bar Chart",
+                        label="📥 Download Bar Chart",
                         data=download_plotly_fig(bar_fig, "bar_chart"),
                         file_name=f"Bar_chart_{cat_col}_vs_{num_col}.html",
                         mime="text/html"

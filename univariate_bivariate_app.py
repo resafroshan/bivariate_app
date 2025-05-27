@@ -7,6 +7,8 @@ from scipy import stats
 from scipy.stats import pearsonr
 import base64
 
+st.set_page_config(page_title="Univariate & Bivariate Analyzer", page_icon="📊")
+
 # Function to calculate statistics
 def calculate_statistics(selected_columns):
     # Core statistics

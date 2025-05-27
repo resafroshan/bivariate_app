@@ -199,19 +199,62 @@ def apply_data_filters(df):
                     filters[column] = selected_values
                     filters[f"{column}_include_nan"] = nan_handling == "Only show rows with NaN values"
             else:
-                # Numerical filter (slider)
-                min_val = float(df[column].min())
-                max_val = float(df[column].max())
+                # Numerical filter with both slider and manual input
+                # Calculate range based on NaN handling
+                if nan_handling == "Exclude rows with NaN values":
+                    # Use range excluding NaN values
+                    valid_data = df[column].dropna()
+                    if len(valid_data) > 0:
+                        min_val = float(valid_data.min())
+                        max_val = float(valid_data.max())
+                        range_note = " (excluding NaN)"
+                    else:
+                        min_val = 0.0
+                        max_val = 1.0
+                        range_note = " (no valid data)"
+                elif nan_handling == "Only show rows with NaN values":
+                    # For NaN-only mode, still show the full range for context but note it
+                    min_val = float(df[column].min())
+                    max_val = float(df[column].max())
+                    range_note = " (NaN rows only - range for reference)"
+                else:
+                    # Include all values (default behavior)
+                    min_val = float(df[column].min())
+                    max_val = float(df[column].max())
+                    range_note = ""
+                
                 step = (max_val - min_val) / 100 if (max_val - min_val) > 0 else 0.1
                 
-                selected_range = st.slider(
-                    f"Select range for '{column}':",
-                    min_val,
-                    max_val,
-                    (min_val, max_val),
-                    step=step,
-                    key=f"filter_{column}_{st.session_state.page}"
-                )
+                st.write(f"**Filter '{column}' (Range: {min_val:.2f} to {max_val:.2f}{range_note}):**")
+                
+                # Manual input for range
+                col1, col2 = st.columns(2)
+                with col1:
+                    min_input = st.number_input(
+                        "Minimum value:",
+                        value=min_val,
+                        min_value=min_val,
+                        max_value=max_val,
+                        step=step,
+                        key=f"min_input_{column}_{st.session_state.page}"
+                    )
+                with col2:
+                    max_input = st.number_input(
+                        "Maximum value:",
+                        value=max_val,
+                        min_value=min_val,
+                        max_value=max_val,
+                        step=step,
+                        key=f"max_input_{column}_{st.session_state.page}"
+                    )
+                
+                # Validate range
+                if min_input > max_input:
+                    st.error(f"⚠️ Minimum value ({min_input}) cannot be greater than maximum value ({max_input})")
+                    selected_range = (min_val, max_val)  # Reset to default
+                else:
+                    selected_range = (min_input, max_input)
+                
                 filters[column] = selected_range
                 
                 # Add NaN checkbox for numerical columns
@@ -221,6 +264,8 @@ def apply_data_filters(df):
                     key=f"include_nan_{column}_{st.session_state.page}"
                 )
                 filters[f"{column}_include_nan"] = include_nan_numeric
+                
+                st.write("---")  # Add separator between numerical columns
         
         # Add reset filters button
         if st.button("Reset All Filters"):
@@ -309,194 +354,6 @@ def apply_data_filters(df):
         st.info(f"No filters applied. Showing full dataset ({original_rows} rows).")
 
     return filtered_df
-    st.header("Data Filtering")
-    
-    # Create expandable filter section
-    with st.expander("🔍 Filter Data", expanded=False):
-        # Get all column names
-        all_columns = df.columns.tolist()
-        
-        # Initialize filtered_df with the original dataframe
-        filtered_df = df.copy()
-        
-        # NaN handling option
-        nan_handling = st.radio(
-            "Handle NaN/missing values of the uploaded data:",
-            ["Include rows with NaN values", "Exclude rows with NaN values", "Only show rows with NaN values"],
-            index=0,  # Default: Include NaN values
-            key=f"nan_handling_{st.session_state.page}"
-        )
-        
-        # Allow multiple columns to filter
-        columns_to_filter = st.multiselect(
-            "Select columns to filter:",
-            all_columns,
-            key=f"filter_columns_{st.session_state.page}"
-        )
-        
-        # Create filters for each selected column
-        filters = {}
-        for column in columns_to_filter:
-            col_type = df[column].dtype
-            
-            if col_type in ['object', 'category']:
-                # Categorical filter
-                # Get unique values, handling NaN appropriately
-                unique_values = df[column].dropna().unique().tolist()
-                
-                # Add a "NaN/Missing" option if Include or Only show NaN is selected
-                if nan_handling != "Exclude rows with NaN values" and df[column].isna().any():
-                    unique_values_with_nan = unique_values.copy()
-                    unique_values_with_nan.append("NaN/Missing")
-                    
-                    selected_values = st.multiselect(
-                        f"Select values for '{column}':",
-                        unique_values_with_nan,
-                        default=unique_values_with_nan if nan_handling != "Only show rows with NaN values" else ["NaN/Missing"],
-                        key=f"filter_{column}_{st.session_state.page}"
-                    )
-                    
-                    # Store selection without the NaN placeholder
-                    filters[column] = [val for val in selected_values if val != "NaN/Missing"]
-                    
-                    # Store whether NaN was selected
-                    filters[f"{column}_include_nan"] = "NaN/Missing" in selected_values
-                else:
-                    selected_values = st.multiselect(
-                        f"Select values for '{column}':",
-                        unique_values,
-                        default=unique_values if nan_handling != "Only show rows with NaN values" else [],
-                        key=f"filter_{column}_{st.session_state.page}"
-                    )
-                    filters[column] = selected_values
-                    filters[f"{column}_include_nan"] = nan_handling == "Only show rows with NaN values"
-            else:
-                # Numerical filter (slider)
-                min_val = float(df[column].min())
-                max_val = float(df[column].max())
-                step = (max_val - min_val) / 100 if (max_val - min_val) > 0 else 0.1
-                
-                selected_range = st.slider(
-                    f"Select range for '{column}':",
-                    min_val,
-                    max_val,
-                    (min_val, max_val),
-                    step=step,
-                    key=f"filter_{column}_{st.session_state.page}"
-                )
-                filters[column] = selected_range
-                
-                # Add NaN checkbox for numerical columns
-                include_nan_numeric = st.checkbox(
-                    f"Include NaN/missing values for '{column}'",
-                    value=nan_handling == "Include rows with NaN values" or nan_handling == "Only show rows with NaN values",
-                    key=f"include_nan_{column}_{st.session_state.page}"
-                )
-                filters[f"{column}_include_nan"] = include_nan_numeric
-        
-        # Add reset filters button
-        if st.button("Reset All Filters"):
-            filters = {}
-            filtered_df = df.copy()
-        
-        # Apply filters
-        if filters:
-            # Apply global NaN handling if no column-specific filters
-            # if not columns_to_filter:
-            if nan_handling == "Exclude rows with NaN values":
-                filtered_df = filtered_df.dropna()
-            elif nan_handling == "Only show rows with NaN values":
-                # Keep only rows with at least one NaN
-                filtered_df = filtered_df[filtered_df.isna().any(axis=1)]
-            
-            # Apply column-specific filters
-            for column, filter_value in filters.items():
-                # Skip the NaN indicator entries
-                if column.endswith("_include_nan"):
-                    continue
-                
-                col_type = df[column].dtype
-                include_nan = filters.get(f"{column}_include_nan", nan_handling == "Include rows with NaN values")
-                
-                if col_type in ['object', 'category']:
-                    # For categorical columns, filter based on selected values
-                    if include_nan:
-                        # Include both selected values and NaN
-                        filtered_df = filtered_df[
-                            filtered_df[column].isin(filter_value) | filtered_df[column].isna()
-                        ]
-                    else:
-                        # Only include selected values, exclude NaN
-                        filtered_df = filtered_df[filtered_df[column].isin(filter_value)]
-                else:
-                    # For numerical columns, apply range filter
-                    if include_nan:
-                        # Include values in range or NaN
-                        filtered_df = filtered_df[
-                            ((filtered_df[column] >= filter_value[0]) & 
-                            (filtered_df[column] <= filter_value[1])) | 
-                            filtered_df[column].isna()
-                        ]
-                    else:
-                        # Only include values in range, exclude NaN
-                        filtered_df = filtered_df[
-                            (filtered_df[column] >= filter_value[0]) & 
-                            (filtered_df[column] <= filter_value[1])
-                        ]
-            
-            # Handle "Only show NaN values" for all columns
-            if nan_handling == "Only show rows with NaN values" and not columns_to_filter:
-                filtered_df = filtered_df[filtered_df.isna().any(axis=1)]
-    
-    # # Show filter summary and filtered data
-    # if 'filters' in locals() and filters:
-    #     st.success(f"Filter applied! Remaining rows: {len(filtered_df)} (from original {len(df)})")
-    #     st.write("Filtered Dataset Preview:")
-    #     st.dataframe(filtered_df.head())
-    # else:
-    #     st.info("No filters applied. Showing full dataset.")
-    
-    # return filtered_df
-
-# Show filter summary and filtered data
-    original_rows = len(df)
-    filtered_rows = len(filtered_df)
-
-    # Check if any filtering was applied (global or column-specific)
-    global_filter_applied = (nan_handling != "Include NaN values")
-    column_filters_applied = 'filters' in locals() and filters and columns_to_filter
-
-    if global_filter_applied or column_filters_applied:
-        # Build filter description
-        filter_descriptions = []
-        
-        if global_filter_applied:
-            if nan_handling == "Exclude NaN values":
-                filter_descriptions.append("Excluded rows with NaN values")
-            elif nan_handling == "Only show NaN values":
-                filter_descriptions.append("Showing only rows with NaN values")
-        
-        if column_filters_applied:
-            filter_descriptions.append(f"Column-specific filters on {len(columns_to_filter)} column(s)")
-        
-        # Display results
-        if filtered_rows != original_rows:
-            st.success(f"Filters applied! Remaining rows: {filtered_rows} (from original {original_rows})")
-            st.write("**Applied filters:**")
-            for desc in filter_descriptions:
-                st.write(f"• {desc}")
-        else:
-            st.info(f"Filters applied but no rows were removed. Total rows: {filtered_rows}")
-            st.write("**Applied filters:**")
-            for desc in filter_descriptions:
-                st.write(f"• {desc}")
-        
-        st.write("**Filtered Dataset Preview:**")
-        st.dataframe(filtered_df.head())
-    else:
-        st.info(f"No filters applied. Showing full dataset ({original_rows} rows).")
-
-    return filtered_df
     
 def reset_all_changes():
     """Reset all changes made to the dataframe"""
@@ -530,15 +387,19 @@ if st.session_state.page == "Univariate Analysis":
     if 'page' not in st.session_state:
         st.session_state.page = 'univariate'
 
-    # File uploader
+# File uploader
     uploaded_file = st.file_uploader("Upload a dataset for Univariate Analysis", 
                                     type=['csv','xlsx'], 
                                     accept_multiple_files=False, 
                                     key="univariate_upload")
 
     if uploaded_file:
-        # Only load the file if it hasn't been loaded already or a new file is uploaded
-        if st.session_state.original_df is None:
+        # Check if this is a new file by comparing file names
+        current_file_name = uploaded_file.name
+        if ('current_file_name' not in st.session_state or 
+            st.session_state.current_file_name != current_file_name or
+            st.session_state.original_df is None):
+            
             try:
                 df = pd.read_excel(uploaded_file)
             except:
@@ -547,6 +408,7 @@ if st.session_state.page == "Univariate Analysis":
             # Store original and working copies
             st.session_state.original_df = df.copy()
             st.session_state.df = df.copy()
+            st.session_state.current_file_name = current_file_name
         
         # Always use the session state dataframe
         df = st.session_state.df.copy()
@@ -801,15 +663,19 @@ elif st.session_state.page == "Bivariate Analysis":
     if 'has_binning' not in st.session_state:
         st.session_state.has_binning = False
 
-    # File uploader
+# File uploader
     uploaded_file = st.file_uploader("Upload a dataset for Bivariate Analysis", 
                                    type=['csv','xlsx'], 
                                    accept_multiple_files=False, 
                                    key="bivariate_upload")
 
     if uploaded_file:
-        # Only load the file if it hasn't been loaded already or a new file is uploaded
-        if st.session_state.original_df is None:
+        # Check if this is a new file by comparing file names
+        current_file_name = uploaded_file.name
+        if ('current_file_name_biv' not in st.session_state or 
+            st.session_state.current_file_name_biv != current_file_name or
+            st.session_state.original_df is None):
+            
             try:
                 df = pd.read_excel(uploaded_file)
             except:
@@ -818,6 +684,13 @@ elif st.session_state.page == "Bivariate Analysis":
             # Store original and working copies
             st.session_state.original_df = df.copy()
             st.session_state.df = df.copy()
+            st.session_state.current_file_name_biv = current_file_name
+            
+            # Reset conversion-related session state when new file is loaded
+            st.session_state.binned_columns = []
+            st.session_state.selected_cat_cols = []
+            st.session_state.manual_cat_cols = []
+            st.session_state.has_binning = False
         
         # Always use the session state dataframe
         df = st.session_state.df.copy()
@@ -949,7 +822,7 @@ elif st.session_state.page == "Bivariate Analysis":
                         st.error(f"Error in preview binning: {str(e)}")
                 
                 else:  # Custom edges
-                    st.write(f"Range: {df[bin_column].min():.2f} to {df[bin_column].max():.2f}")
+                    st.write(f"Range: {temp_df[bin_column].min():.2f} to {temp_df[bin_column].max():.2f}")
                     custom_edges = st.text_input("Enter bin edges (comma-separated):", key="custom_edges")
                     
                     if custom_edges:
@@ -957,7 +830,7 @@ elif st.session_state.page == "Bivariate Analysis":
                             edges = [float(x.strip()) for x in custom_edges.split(',')]
                             
                             # Create preview binning
-                            binned = pd.cut(temp_df[bin_column], bins=edges)
+                            binned = pd.cut(temp_df[bin_column], bins=edges, include_lowest=True)
                             
                             # Format for display
                             binned_str = binned.astype(str)

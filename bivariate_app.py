@@ -925,7 +925,7 @@ elif st.session_state.page == "Bivariate Analysis":
                         binned = pd.qcut(temp_df[bin_column], q=opts['num_bins'], duplicates='drop')
                     else:  # Custom edges
                         edges = [float(x.strip()) for x in opts['custom_edges'].split(',')]
-                        binned = pd.cut(temp_df[bin_column], bins=edges)
+                        binned = pd.cut(temp_df[bin_column], bins=edges, include_lowest=True)
                     
                     # Clean and convert to categorical
                     df[bin_result_name] = binned.astype(str)
@@ -1060,11 +1060,23 @@ elif st.session_state.page == "Bivariate Analysis":
                 
                 # Handle NaN values in categorical column
                 if include_nan:
-                    # Convert NaN values to a string representation for plotting
-                    plot_df[cat_col] = plot_df[cat_col].fillna('NaN/Missing')
-                    # If it was a category type, we need to add 'NaN/Missing' as a category
+                    # Check if there are any existing NaN-related categories
+                    existing_categories = plot_df[cat_col].cat.categories if plot_df[cat_col].dtype.name == 'category' else []
+                    nan_categories = [cat for cat in existing_categories if str(cat).lower() in ['nan', 'missing', 'null', 'none']]
+                    
                     if plot_df[cat_col].dtype.name == 'category':
-                        plot_df[cat_col] = plot_df[cat_col].cat.add_categories(['NaN/Missing'])
+                        if len(nan_categories) == 0:  # No existing NaN categories
+                            # Add 'NaN/Missing' as a category if it doesn't exist
+                            if 'NaN/Missing' not in plot_df[cat_col].cat.categories:
+                                plot_df[cat_col] = plot_df[cat_col].cat.add_categories(['NaN/Missing'])
+                            # Fill NaN values
+                            plot_df[cat_col] = plot_df[cat_col].fillna('NaN/Missing')
+                        else:
+                            st.warning("NaN already exists as a category")
+                        # If NaN categories already exist, actual NaN values will show up as NaN in the plot
+                    else:
+                        # For non-categorical columns, direct fillna works
+                        plot_df[cat_col] = plot_df[cat_col].fillna('NaN/Missing')
                 else:
                     # Remove rows where categorical column is NaN
                     plot_df = plot_df.dropna(subset=[cat_col])

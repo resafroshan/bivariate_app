@@ -996,47 +996,50 @@ elif st.session_state.page == "Bivariate Analysis":
                     x_col = st.selectbox("X-axis column", numerical_columns, key="x_cont")
                 with col2:
                     y_col = st.selectbox("Y-axis column", numerical_columns, index=min(1, len(numerical_columns)-1), key="y_cont")
-                
-                # Outlier removal
-                remove_x = st.checkbox(f"Remove outliers from {x_col}", key="remove_x")
-                remove_y = st.checkbox(f"Remove outliers from {y_col}", key="remove_y")
-                
-                plot_df = filtered_df.copy()
-                if remove_x:
-                    plot_df = remove_outliers_from_column(plot_df, x_col)
-                if remove_y:
-                    plot_df = remove_outliers_from_column(plot_df, y_col)
-                
-                # Calculate correlation
-                if len(plot_df) > 1:
-                    # Drop NaN values from both columns together to ensure equal length
-                    valid_data = plot_df[[x_col, y_col]].dropna()
+                if x_col != y_col:
+                    # Outlier removal
+                    remove_x = st.checkbox(f"Remove outliers from {x_col}", key="remove_x")
+                    remove_y = st.checkbox(f"Remove outliers from {y_col}", key="remove_y")
                     
-                    if len(valid_data) > 1:  # Check if we have enough data after dropping NaNs
-                        corr, p_val = pearsonr(valid_data[x_col], valid_data[y_col])
-                        st.write(f"**Pearson correlation:** {corr:.4f}")
-                        st.write(f"**p-value:** {p_val:.4f}")
-                    else:
-                        st.warning("Not enough valid data points to calculate correlation after removing NaN values.")
-                
-                # Visualizations
-                scatter_fig = px.scatter(plot_df, x=x_col, y=y_col, trendline="ols")
-                st.plotly_chart(scatter_fig, use_container_width=True)
-                st.download_button(
-                    label="📥 Download Scatter Plot",
-                    data=download_plotly_fig(scatter_fig, "scatter_plot"),
-                    file_name=f"Scatter_plot_{x_col}_vs_{y_col}.html",
-                    mime="text/html"
-                )
-                
-                heatmap_fig = px.density_heatmap(plot_df, x=x_col, y=y_col)
-                st.plotly_chart(heatmap_fig, use_container_width=True)
-                st.download_button(
-                    label="📥 Download Heatmap",
-                    data=download_plotly_fig(heatmap_fig, "heatmap_plot"),
-                    file_name=f"Heatmap_{x_col}_vs_{y_col}.html",
-                    mime="text/html"
-                )
+                    plot_df = filtered_df.copy()
+                    if remove_x:
+                        plot_df = remove_outliers_from_column(plot_df, x_col)
+                    if remove_y:
+                        plot_df = remove_outliers_from_column(plot_df, y_col)
+                    
+                    # Calculate correlation
+                    if len(plot_df) > 1:
+                        # Drop NaN values from both columns together to ensure equal length
+                        valid_data = plot_df[[x_col, y_col]].dropna()
+                        
+                        if len(valid_data) > 1:  # Check if we have enough data after dropping NaNs
+                            corr, p_val = pearsonr(valid_data[x_col], valid_data[y_col])
+                            st.write(f"**Pearson correlation:** {corr:.4f}")
+                            st.write(f"**p-value:** {p_val:.4f}")
+                        else:
+                            st.warning("Not enough valid data points to calculate correlation after removing NaN values.")
+
+                    # Visualizations
+                    scatter_fig = px.scatter(plot_df, x=x_col, y=y_col, trendline="ols")
+                    st.plotly_chart(scatter_fig, use_container_width=True)
+                    st.download_button(
+                        label="📥 Download Scatter Plot",
+                        data=download_plotly_fig(scatter_fig, "scatter_plot"),
+                        file_name=f"Scatter_plot_{x_col}_vs_{y_col}.html",
+                        mime="text/html"
+                    )
+                    
+                    heatmap_fig = px.density_heatmap(plot_df, x=x_col, y=y_col)
+                    st.plotly_chart(heatmap_fig, use_container_width=True)
+                    st.download_button(
+                        label="📥 Download Heatmap",
+                        data=download_plotly_fig(heatmap_fig, "heatmap_plot"),
+                        file_name=f"Heatmap_{x_col}_vs_{y_col}.html",
+                        mime="text/html"
+                    )
+                else:
+                    st.warning("Please select two different columns!")
+
             else:
                 st.warning("Need at least 2 numerical columns for this analysis")
         

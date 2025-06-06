@@ -6,8 +6,8 @@ import plotly.figure_factory as ff
 from scipy import stats
 from scipy.stats import pearsonr
 import base64
-
-st.set_page_config(page_title="Univariate & Bivariate Analyzer", page_icon="📊")
+import plotly.offline as pyo
+from io import StringIO
 
 # Function to calculate statistics
 def calculate_statistics(selected_columns):
@@ -106,9 +106,11 @@ def detect_table_type(df):
 
 # Function to create a download link for Plotly figures
 def download_plotly_fig(fig, filename):
-    html = fig.to_html(full_html=False)
+    html = fig.to_html(
+        full_html=True,           # Changed from False
+        include_plotlyjs='cdn'    # Added this
+    )
     return html
-
 def create_categorical_visualizations(data, column):
     # Calculate value counts and percentages
     value_counts = data[column].value_counts()
@@ -648,6 +650,7 @@ if st.session_state.page == "Univariate Analysis":
         st.warning("Please upload a dataset to begin analysis")
 
 # Bivariate Analysis Page
+# Bivariate Analysis Page
 elif st.session_state.page == "Bivariate Analysis":
     st.title("Bivariate Analysis")
 
@@ -665,7 +668,7 @@ elif st.session_state.page == "Bivariate Analysis":
     if 'has_binning' not in st.session_state:
         st.session_state.has_binning = False
 
-# File uploader
+    # File uploader
     uploaded_file = st.file_uploader("Upload a dataset for Bivariate Analysis", 
                                    type=['csv','xlsx'], 
                                    accept_multiple_files=False, 
@@ -725,7 +728,7 @@ elif st.session_state.page == "Bivariate Analysis":
         with convert_tabs[1]:  # Manual
             manual_cat_cols = st.multiselect(
                 "Manually select columns to convert to categorical:",
-                df.columns.tolist(),
+                df.columns.to_list(),
                 default=st.session_state.manual_cat_cols,
                 key="manual_cat_selection"
             )
@@ -797,17 +800,36 @@ elif st.session_state.page == "Bivariate Analysis":
                         binned_str = binned_str.str.replace(r'[\(\)\[\]]', '', regex=True)
                         binned_str = binned_str.str.replace(',', ' -')
                         
-                        # Add to temp dataframe
-                        temp_df['preview_binned'] = binned_str
+                        # Create ordered categories for preview
+                        unique_categories = binned_str[binned_str != 'nan'].unique()
+                        
+                        def extract_lower_bound(interval_str):
+                            try:
+                                if interval_str == 'nan':
+                                    return float('inf')
+                                lower_bound = float(interval_str.split(' - ')[0])
+                                return lower_bound
+                            except:
+                                return float('inf')
+                        
+                        sorted_categories = sorted(unique_categories, key=extract_lower_bound)
+                        if 'nan' in binned_str.values:
+                            sorted_categories.append('nan')
+                        
+                        # Add to temp dataframe with ordered categories
+                        temp_df['preview_binned'] = pd.Categorical(binned_str, categories=sorted_categories, ordered=True)
                         
                         # Show distribution preview
                         st.subheader("Binning Preview")
-                        fig = px.histogram(temp_df, x='preview_binned', title="Distribution of Binned Values")
+                        fig = px.histogram(temp_df, x='preview_binned', title="Distribution of Binned Values", 
+                                          category_orders={'preview_binned': sorted_categories})
                         st.plotly_chart(fig, use_container_width=True)
                         
                         # Show counts and statistics
                         bin_counts = temp_df['preview_binned'].value_counts().reset_index()
                         bin_counts.columns = ['Bin', 'Count']
+                        # Sort by category order, not alphabetically
+                        bin_counts['Bin'] = pd.Categorical(bin_counts['Bin'], categories=sorted_categories, ordered=True)
                         bin_counts = bin_counts.sort_values('Bin')
                         
                         col1, col2 = st.columns(2)
@@ -817,7 +839,7 @@ elif st.session_state.page == "Bivariate Analysis":
                         
                         with col2:
                             # Calculate statistics for each bin
-                            bin_stats = temp_df.groupby('preview_binned')[bin_column].agg(['mean', 'min', 'max']).reset_index()
+                            bin_stats = temp_df.groupby('preview_binned', observed=True)[bin_column].agg(['mean', 'min', 'max']).reset_index()
                             st.write("Bin Statistics:")
                             st.dataframe(bin_stats)
                     except Exception as e:
@@ -839,17 +861,36 @@ elif st.session_state.page == "Bivariate Analysis":
                             binned_str = binned_str.str.replace(r'[\(\)\[\]]', '', regex=True)
                             binned_str = binned_str.str.replace(',', ' -')
                             
-                            # Add to temp dataframe
-                            temp_df['preview_binned'] = binned_str
+                            # Create ordered categories for preview
+                            unique_categories = binned_str[binned_str != 'nan'].unique()
+                            
+                            def extract_lower_bound(interval_str):
+                                try:
+                                    if interval_str == 'nan':
+                                        return float('inf')
+                                    lower_bound = float(interval_str.split(' - ')[0])
+                                    return lower_bound
+                                except:
+                                    return float('inf')
+                            
+                            sorted_categories = sorted(unique_categories, key=extract_lower_bound)
+                            if 'nan' in binned_str.values:
+                                sorted_categories.append('nan')
+                            
+                            # Add to temp dataframe with ordered categories
+                            temp_df['preview_binned'] = pd.Categorical(binned_str, categories=sorted_categories, ordered=True)
                             
                             # Show distribution preview
                             st.subheader("Binning Preview")
-                            fig = px.histogram(temp_df, x='preview_binned', title="Distribution of Binned Values")
+                            fig = px.histogram(temp_df, x='preview_binned', title="Distribution of Binned Values",
+                                              category_orders={'preview_binned': sorted_categories})
                             st.plotly_chart(fig, use_container_width=True)
                             
                             # Show counts and statistics
                             bin_counts = temp_df['preview_binned'].value_counts().reset_index()
                             bin_counts.columns = ['Bin', 'Count']
+                            # Sort by category order, not alphabetically
+                            bin_counts['Bin'] = pd.Categorical(bin_counts['Bin'], categories=sorted_categories, ordered=True)
                             bin_counts = bin_counts.sort_values('Bin')
                             
                             col1, col2 = st.columns(2)
@@ -859,7 +900,7 @@ elif st.session_state.page == "Bivariate Analysis":
                             
                             with col2:
                                 # Calculate statistics for each bin
-                                bin_stats = temp_df.groupby('preview_binned')[bin_column].agg(['mean', 'min', 'max']).reset_index()
+                                bin_stats = temp_df.groupby('preview_binned', observed=True)[bin_column].agg(['mean', 'min', 'max']).reset_index()
                                 st.write("Bin Statistics:")
                                 st.dataframe(bin_stats)
                         except Exception as e:
@@ -893,7 +934,7 @@ elif st.session_state.page == "Bivariate Analysis":
                     df[col] = df[col].astype('category')
                     changes_made = True
             
-            # Apply binning
+            # Apply binning with ordered categories
             if st.session_state.has_binning and hasattr(st.session_state, 'bin_options'):
                 try:
                     opts = st.session_state.bin_options
@@ -929,11 +970,35 @@ elif st.session_state.page == "Bivariate Analysis":
                         edges = [float(x.strip()) for x in opts['custom_edges'].split(',')]
                         binned = pd.cut(temp_df[bin_column], bins=edges, include_lowest=True)
                     
-                    # Clean and convert to categorical
-                    df[bin_result_name] = binned.astype(str)
-                    df[bin_result_name] = df[bin_result_name].str.replace(r'[\(\)\[\]]', '', regex=True)
-                    df[bin_result_name] = df[bin_result_name].str.replace(',', ' -')
-                    df[bin_result_name] = df[bin_result_name].astype('category')
+                    # Clean and convert to string first
+                    binned_str = binned.astype(str)
+                    binned_str = binned_str.str.replace(r'[\(\)\[\]]', '', regex=True)
+                    binned_str = binned_str.str.replace(',', ' -')
+                    
+                    # Create ordered categories by sorting the unique interval strings
+                    # Get unique non-null categories
+                    unique_categories = binned_str[binned_str != 'nan'].unique()
+                    
+                    # Sort categories by their lower bound
+                    def extract_lower_bound(interval_str):
+                        try:
+                            if interval_str == 'nan':
+                                return float('inf')  # Put NaN at the end
+                            # Extract the first number (lower bound) from strings like "1.0 - 2.0"
+                            lower_bound = float(interval_str.split(' - ')[0])
+                            return lower_bound
+                        except:
+                            return float('inf')  # If parsing fails, put at the end
+                    
+                    # Sort categories by lower bound
+                    sorted_categories = sorted(unique_categories, key=extract_lower_bound)
+                    
+                    # Add 'nan' category at the end if it exists
+                    if 'nan' in binned_str.values:
+                        sorted_categories.append('nan')
+                    
+                    # Convert to ordered categorical
+                    df[bin_result_name] = pd.Categorical(binned_str, categories=sorted_categories, ordered=True)
                     
                     if bin_result_name not in st.session_state.binned_columns:
                         st.session_state.binned_columns.append(bin_result_name)
@@ -1137,10 +1202,44 @@ elif st.session_state.page == "Bivariate Analysis":
                 
                 # Visualizations
                 try:
-                    # Box plot with proper NaN handling
-                    box_fig = px.box(plot_df, x=cat_col, y=num_col, title=f"{num_col} by {cat_col}")
+                    # Box plot with count annotations near each box
+                    # col1, col2 = st.columns([4, 1])
+
+                    # with col2:
+                    #     reset_clicked = st.button("Reset", key='reset_box_title')
+
+                    # with col1:
+                    #     if reset_clicked:
+                    #         box_title = None
+                    #     box_title = st.text_input("Enter a custom title for Box Plot (optional):")
+
+                    if 'box_title' not in st.session_state:
+                        st.session_state.box_title = ''
+
+                    box_title = st.text_input("Enter a custom title for Box Plot (optional):", value=st.session_state.box_title)
+                    st.warning("Clear the field and press enter to reset")
+                    st.session_state.box_title = box_title  
+                        
+                    # Calculate counts for each category
+                    count_data = plot_df.groupby(cat_col)[num_col].count().reset_index()
+                    count_data.columns = [cat_col, 'Count']
                     
-                    # Add mean markers - calculate means excluding NaN values in numerical column
+                    # Create category order for proper display of binned columns
+                    category_order = None
+                    if cat_col in st.session_state.binned_columns:
+                        # For binned columns, maintain the order
+                        if plot_df[cat_col].dtype.name == 'category' and hasattr(plot_df[cat_col].dtype, 'ordered') and plot_df[cat_col].dtype.ordered:
+                            category_order = plot_df[cat_col].cat.categories.tolist()
+
+                    # Create box plot
+                    if box_title:
+                        box_fig = px.box(plot_df, x=cat_col, y=num_col, title=box_title,
+                                        category_orders={cat_col: category_order} if category_order else None)
+                    else:
+                        box_fig = px.box(plot_df, x=cat_col, y=num_col, title=f"{num_col} by {cat_col}",
+                                        category_orders={cat_col: category_order} if category_order else None)
+
+                    # Add mean markers
                     means = plot_df.groupby(cat_col)[num_col].mean().reset_index()
                     box_fig.add_trace(go.Scatter(
                         x=means[cat_col],
@@ -1149,6 +1248,27 @@ elif st.session_state.page == "Bivariate Analysis":
                         marker=dict(color='red', symbol='x', size=10),
                         name='Mean'
                     ))
+                    
+                    # Add count annotations near each box
+                    # Calculate the y-position for annotations (slightly above the maximum value of each box)
+                    for i, (category, count) in enumerate(zip(count_data[cat_col], count_data['Count'])):
+                        # Get the maximum value for this category to position annotation above it
+                        category_data = plot_df[plot_df[cat_col] == category][num_col].dropna()
+                        if len(category_data) > 0:
+                            max_val = category_data.max()
+                            # Add some padding above the max value
+                            y_position = max_val + (plot_df[num_col].max() - plot_df[num_col].min()) * 0.02
+                            
+                            box_fig.add_annotation(
+                                x=category,
+                                y=y_position,
+                                text=f"n={count}",
+                                showarrow=False,
+                                font=dict(size=10, color="black"),
+                                bgcolor="rgba(255,255,255,0.8)",
+                                bordercolor="gray",
+                                borderwidth=1
+                            )
                     
                     # Rotate x-axis labels if there are many categories
                     if cat_count > 10:
@@ -1176,14 +1296,42 @@ elif st.session_state.page == "Bivariate Analysis":
                     agg_df['Std'] = agg_df['Std'].fillna(0)
                     
                     # Add count info to hover text
-                    bar_fig = px.bar(
-                        agg_df, 
-                        x=cat_col, 
-                        y='Mean', 
-                        error_y='Std',
-                        title=f"Mean {num_col} by {cat_col} with Standard Deviation",
-                        hover_data=['Count']
-                    )
+                    if 'bar_title' not in st.session_state:
+                        st.session_state.bar_title = ''
+
+                    # Layout: text input and reset button in one row
+                    # col1, col2 = st.columns([4, 1])
+                    # with col1:
+                    #     bar_title = st.text_input("Enter a custom title for Bar graph (optional):", value=st.session_state.bar_title)
+                    #     st.warning("Clear the field and press enter to reset")
+                    #     st.session_state.bar_title = bar_title
+                    # with col2:
+                    #     if st.button('Reset', key='reset_bar_title'):
+                    #         st.session_state.bar_title = ''
+
+                    bar_title = st.text_input("Enter a custom title for Bar graph (optional):", value=st.session_state.bar_title)
+                    st.warning("Clear the field and press enter to reset")
+                    st.session_state.bar_title = bar_title                  
+
+                    # Create bar chart
+                    if bar_title:
+                        bar_fig = px.bar(
+                            agg_df, 
+                            x=cat_col, 
+                            y='Mean', 
+                            error_y='Std',
+                            title=bar_title,
+                            hover_data=['Count']
+                        )
+                    else:
+                        bar_fig = px.bar(
+                            agg_df, 
+                            x=cat_col, 
+                            y='Mean', 
+                            error_y='Std',
+                            title=f"Mean {num_col} by {cat_col} with Standard Deviation",
+                            hover_data=['Count']
+                        )
 
                     bar_fig.update_layout(yaxis_title=f"Mean - {num_col}")
                     
